@@ -105,9 +105,11 @@ check('apple-touch-icon がある', fs.existsSync(path.join(APP_DIR, 'apple-touc
 const css = fs.readFileSync(path.join(APP_DIR, 'style.css'), 'utf8');
 check('[hidden] を隠す指定がある', /\[hidden\]\s*\{[^}]*display:\s*none\s*!important/.test(css), true);
 // アプリが読み込むライブラリと、テストが使うライブラリが同じファイルか
-const scriptSrc = (html.match(/<script src="([^"]*zxing[^"]*)"/) || [])[1];
-check('ライブラリを自分のサイトから読んでいる', scriptSrc, 'lib/zxing-0.21.3.min.js');
-check('そのファイルが実在する', fs.existsSync(path.join(APP_DIR, scriptSrc || '')), true);
+const scriptSrc = (html.match(/<script src="([^"]*zxing[^"]*)"/) || [])[1] || '';
+// ?v=3 のようなキャッシュ対策の印が付くので、それを取り除いてから確認する
+const scriptPath = scriptSrc.split('?')[0];
+check('ライブラリを自分のサイトから読んでいる', scriptPath, 'lib/zxing-0.21.3.min.js');
+check('そのファイルが実在する', fs.existsSync(path.join(APP_DIR, scriptPath)), true);
 check('外部CDNを読み込んでいない', /src="https?:/.test(html), false);
 
 // 読み取りを休みなく繰り返さない設定（iPhoneの発熱・電池対策）が入っているか
