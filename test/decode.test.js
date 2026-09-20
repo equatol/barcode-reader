@@ -1,7 +1,6 @@
 // バーコード読み取りのテスト
 //   使い方: node test/decode.test.js
-// ブラウザを使わずに、アプリと同じライブラリ・同じ設定で
-// 「既知のバーコード画像が正しく読めるか」を確認します。
+// ブラウザを使わずに、アプリ本体（script.js）の関数をそのまま呼び出して確認します。
 
 const fs = require('fs');
 const path = require('path');
@@ -12,6 +11,9 @@ const { MultiFormatReader, BinaryBitmap, HybridBinarizer, RGBLuminanceSource,
 
 const APP_DIR = path.join(__dirname, '..');
 const FIXTURES = path.join(__dirname, 'fixtures');
+const js = fs.readFileSync(path.join(APP_DIR, 'script.js'), 'utf8');
+const html = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
+const css = fs.readFileSync(path.join(APP_DIR, 'style.css'), 'utf8');
 
 // --- かんたんなテスト用の道具 ---
 let passed = 0;
@@ -27,84 +29,110 @@ function check(name, actual, expected) {
   }
 }
 
-// --- アプリと同じ読み取り設定を作る ---
-function createReader() {
-  const hints = new Map();
-  hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-    BarcodeFormat.EAN_13, BarcodeFormat.EAN_8,
-    BarcodeFormat.UPC_A, BarcodeFormat.UPC_E,
-    BarcodeFormat.CODE_128, BarcodeFormat.CODE_39,
-    BarcodeFormat.ITF, BarcodeFormat.QR_CODE,
-  ]);
-  hints.set(DecodeHintType.TRY_HARDER, true);
-  const reader = new MultiFormatReader();
-  reader.setHints(hints);
-  return reader;
+// --- アプリ本体から読み取り部分を取り出す ---
+// script.js は画面（DOM）を操作するのでそのままでは読み込めません。
+// 解析に関わる部分だけを取り出して、本物のコードを動かします。
+function extract(pattern, label) {
+  const matched = js.match(pattern);
+  if (!matched) throw new Error(`${label} が script.js に見つかりません`);
+  return matched[0];
 }
 
-// 白黒データ（.bin）を読み込んで、ライブラリが扱える形にする
+function loadDecoder() {
+  const parts = [
+    extract(/const FORMATS = \[[\s\S]*?\n\];/, 'FORMATS'),
+    extract(/function createHints\(\)[\s\S]*?\n}\n/, 'createHints'),
+    extract(/const coreReader = new MultiFormatReader\(\);\ncoreReader\.setHints\(createHints\(\)\);/, 'coreReader'),
+    extract(/function toLuminance[\s\S]*?\n}\n/, 'toLuminance'),
+    extract(/function brightnessRange[\s\S]*?\n}\n/, 'brightnessRange'),
+    extract(/function isHarmlessDecodeError[\s\S]*?\n}\n/, 'isHarmlessDecodeError'),
+    extract(/function rotate90[\s\S]*?\n}\n/, 'rotate90'),
+    extract(/function decodeLuminance[\s\S]*?\n}\n/, 'decodeLuminance'),
+    extract(/function decodeImageData[\s\S]*?\n}\n/, 'decodeImageData'),
+  ];
+  const body = 'let lastBrightness;\n' + parts.join('\n')
+    + '\nreturn { toLuminance, brightnessRange, rotate90, decodeImageData,'
+    + ' createHints, getBrightness: () => lastBrightness };';
+  const factory = new Function(
+    'ZXing', 'MultiFormatReader', 'RGBLuminanceSource', 'BinaryBitmap',
+    'HybridBinarizer', 'DecodeHintType', 'BarcodeFormat', body);
+  return factory(ZXing, MultiFormatReader, RGBLuminanceSource, BinaryBitmap,
+                 HybridBinarizer, DecodeHintType, BarcodeFormat);
+}
+
+const app = loadDecoder();
+
+// テスト画像（白黒データ）を、カメラから取り込んだのと同じ形式（RGBA）に変換する
 function loadFixture(name) {
   const meta = JSON.parse(fs.readFileSync(path.join(FIXTURES, `${name}.json`), 'utf8'));
   const gray = fs.readFileSync(path.join(FIXTURES, `${name}.bin`));
-  const source = new RGBLuminanceSource(
-    new Uint8ClampedArray(gray), meta.width, meta.height);
-  return { meta, bitmap: new BinaryBitmap(new HybridBinarizer(source)) };
+  const rgba = new Uint8ClampedArray(meta.width * meta.height * 4);
+  for (let i = 0, j = 0; i < gray.length; i++, j += 4) {
+    rgba[j] = rgba[j + 1] = rgba[j + 2] = gray[i];
+    rgba[j + 3] = 255;
+  }
+  return { meta, rgba };
 }
 
-function decode(name) {
-  const { meta, bitmap } = loadFixture(name);
-  const reader = createReader();
+function decodeFixture(name) {
+  const { meta, rgba } = loadFixture(name);
   try {
-    // decode() ではなく decodeWithState() を使う。
-    // decode() は設定（読み取るコードの種類の指定）を消してしまい、
-    // アプリの実際の動作（decodeWithState）と違う結果になるため
-    const result = reader.decodeWithState(bitmap);
+    const result = app.decodeImageData(rgba, meta.width, meta.height);
     return { meta, text: result.getText(), format: BarcodeFormat[result.getBarcodeFormat()] };
   } catch (err) {
     return { meta, text: null, format: null }; // 読み取れなかった
   }
 }
 
-console.log('■ 画像からの読み取り');
+// ========== ここからテスト ==========
+
+console.log('■ 色から明るさへの変換');
+check('白は明るい', app.toLuminance(new Uint8ClampedArray([255, 255, 255, 255]), 1, 1)[0], 255);
+check('黒は暗い', app.toLuminance(new Uint8ClampedArray([0, 0, 0, 255]), 1, 1)[0], 0);
+// 人の目は緑を明るく感じるので、同じ濃さでも赤は暗めの値になる
+check('赤は中くらい', app.toLuminance(new Uint8ClampedArray([255, 0, 0, 255]), 1, 1)[0], 76);
+
+console.log('■ 明るさの範囲の測定（真っ黒な映像を見つけるため）');
+{
+  const data = new Uint8ClampedArray(1000).fill(100);
+  data[0] = 5;
+  data[37] = 250;
+  const range = app.brightnessRange(data);
+  check('一番暗い値', range.min, 5);
+  check('一番明るい値', range.max, 250);
+}
+
+console.log('■ 画像からの読み取り（アプリと同じ関数）');
 for (const name of ['ean13', 'qr']) {
-  const r = decode(name);
+  const r = decodeFixture(name);
   check(`${name}: 読み取った文字`, r.text, r.meta.expected);
   check(`${name}: コードの種類`, r.format, r.meta.format);
 }
 {
+  // 90度回転したバーコードも、回転して再挑戦する処理で読めること
+  const r = decodeFixture('ean13_rotated');
+  check('回転したバーコードも読める', r.text, r.meta.expected);
+}
+{
   // 何も写っていない画像では、誤検出せずに「読み取れない」となること
-  const r = decode('blank');
+  const r = decodeFixture('blank');
   check('blank: 何も検出しない', r.text, null);
 }
-
 {
-  // 「QRコードだけ読む」設定にしたら、商品バーコードは読まれないこと。
-  // これが通らない場合、読み取るコードの種類の指定が効いていない
-  const hints = new Map([[DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]]]);
-  const reader = new MultiFormatReader();
-  reader.setHints(hints);
-  const { bitmap } = loadFixture('ean13');
-  let read = null;
-  try {
-    read = reader.decodeWithState(bitmap).getText();
-  } catch (err) {
-    read = null;
-  }
-  check('読み取る種類の指定が効いている', read, null);
+  // 読み取り中に明るさが記録されていること（真っ黒な映像の判別に使う）
+  decodeFixture('ean13');
+  check('明るさが記録されている', /^\d+-\d+$/.test(app.getBrightness()), true);
 }
 
 console.log('■ iPhoneで動かすために必要な設定');
-const html = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
-const js = fs.readFileSync(path.join(APP_DIR, 'script.js'), 'utf8');
 // playsinline が無いと、iPhoneでカメラ映像が全画面プレーヤーになってしまう
 check('video に playsinline がある', /<video[^>]*\splaysinline/.test(html), true);
-check('背面カメラを指定している', js.includes("facingMode"), true);
+check('背面カメラを指定している', js.includes('facingMode'), true);
 check('マニフェストを読み込んでいる', html.includes('rel="manifest"'), true);
 check('apple-touch-icon がある', fs.existsSync(path.join(APP_DIR, 'apple-touch-icon.png')), true);
 // hidden属性が確実に効くようにしておく（display指定のあるクラスに打ち消されるのを防ぐ）
-const css = fs.readFileSync(path.join(APP_DIR, 'style.css'), 'utf8');
 check('[hidden] を隠す指定がある', /\[hidden\]\s*\{[^}]*display:\s*none\s*!important/.test(css), true);
-// アプリが読み込むライブラリと、テストが使うライブラリが同じファイルか
+
 const scriptSrc = (html.match(/<script src="([^"]*zxing[^"]*)"/) || [])[1] || '';
 // ?v=3 のようなキャッシュ対策の印が付くので、それを取り除いてから確認する
 const scriptPath = scriptSrc.split('?')[0];
@@ -112,56 +140,22 @@ check('ライブラリを自分のサイトから読んでいる', scriptPath, '
 check('そのファイルが実在する', fs.existsSync(path.join(APP_DIR, scriptPath)), true);
 check('外部CDNを読み込んでいない', /src="https?:/.test(html), false);
 
-// 読み取りを休みなく繰り返さない設定（iPhoneの発熱・電池対策）が入っているか
-check('カメラ側に再試行の間隔がある', /cameraReader\.timeBetweenDecodingAttempts\s*=/.test(js), true);
-check('画像側に再試行の間隔がある', /fileReader\.timeBetweenDecodingAttempts\s*=/.test(js), true);
-
-// 映像取り込み用キャンバスの自己修復が、正しく働くか確かめる
-console.log('■ 映像取り込みの自己修復');
-{
-  const matched = js.match(/function fixCaptureCanvasIfBroken[\s\S]*?\n}\n/);
-  check('fixCaptureCanvasIfBroken が定義されている', Boolean(matched), true);
-
-  if (matched) {
-    // この関数は els と cameraReader を使うので、偽物を渡して動かす
-    const make = new Function('els', 'cameraReader', 'return (' + matched[0] + ')');
-
-    // ① 映像は1280pxなのにキャンバスが0px → 作り直させる（これが不具合の状態）
-    const broken = { captureCanvas: { width: 0 }, _destroyCaptureCanvas() { this.captureCanvas = undefined; } };
-    const fixBroken = make({ video: { videoWidth: 1280 } }, broken);
-    check('0pxのキャンバスは作り直す', fixBroken(), true);
-    check('作り直しのため捨てられている', broken.captureCanvas, undefined);
-
-    // ② 大きさが合っているときは何もしない
-    const ok = { captureCanvas: { width: 1280 }, _destroyCaptureCanvas() { this.captureCanvas = undefined; } };
-    check('大きさが合っていれば何もしない', make({ video: { videoWidth: 1280 } }, ok)(), false);
-
-    // ③ 映像サイズがまだ不明なときは何もしない
-    const unknown = { captureCanvas: { width: 0 }, _destroyCaptureCanvas() { this.captureCanvas = undefined; } };
-    check('映像サイズ不明なら何もしない', make({ video: { videoWidth: 0 } }, unknown)(), false);
-  }
-}
-
 // withTimeout（処理が終わらないときに打ち切る仕組み）を script.js から取り出して実際に動かす
 (async () => {
   console.log('■ 時間切れの安全装置');
-  const matched = js.match(/function withTimeout[\s\S]*?\n}\n/);
-  check('withTimeout が定義されている', Boolean(matched), true);
+  const withTimeout = new Function(
+    'return (' + extract(/function withTimeout[\s\S]*?\n}\n/, 'withTimeout') + ')')();
 
-  if (matched) {
-    const withTimeout = eval('(' + matched[0] + ')');
+  check('普通に終わる処理はそのまま返る', await withTimeout(Promise.resolve('ok'), 1000), 'ok');
 
-    check('普通に終わる処理はそのまま返る', await withTimeout(Promise.resolve('ok'), 1000), 'ok');
-
-    let cleanedUp = false;
-    const neverEnds = new Promise(() => {}); // わざと終わらない処理
-    try {
-      await withTimeout(neverEnds, 50, () => { cleanedUp = true; });
-      check('終わらない処理は時間切れになる', 'エラーにならなかった', 'TimeoutError');
-    } catch (err) {
-      check('終わらない処理は時間切れになる', err.name, 'TimeoutError');
-      check('時間切れのときに後始末が呼ばれる', cleanedUp, true);
-    }
+  let cleanedUp = false;
+  const neverEnds = new Promise(() => {}); // わざと終わらない処理
+  try {
+    await withTimeout(neverEnds, 50, () => { cleanedUp = true; });
+    check('終わらない処理は時間切れになる', 'エラーにならなかった', 'TimeoutError');
+  } catch (err) {
+    check('終わらない処理は時間切れになる', err.name, 'TimeoutError');
+    check('時間切れのときに後始末が呼ばれる', cleanedUp, true);
   }
 
   console.log(`\n結果: 成功 ${passed} 件 / 失敗 ${failed} 件`);

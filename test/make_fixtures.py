@@ -31,6 +31,9 @@ ean = barcode.get("ean13", "490123456789", writer=ImageWriter())
 ean_img = ean.render()
 dump("ean13", ean_img, ean.get_fullcode(), "EAN_13")
 
+# 90度回転させた商品バーコード（縦向きでも読めるかの確認用）
+dump("ean13_rotated", ean_img.rotate(90, expand=True), ean.get_fullcode(), "EAN_13")
+
 # QRコード
 qr_img = qrcode.make("https://example.com/test").convert("RGB")
 dump("qr", qr_img, "https://example.com/test", "QR_CODE")
