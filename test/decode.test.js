@@ -114,6 +114,32 @@ check('外部CDNを読み込んでいない', /src="https?:/.test(html), false);
 check('カメラ側に再試行の間隔がある', /cameraReader\.timeBetweenDecodingAttempts\s*=/.test(js), true);
 check('画像側に再試行の間隔がある', /fileReader\.timeBetweenDecodingAttempts\s*=/.test(js), true);
 
+// 映像取り込み用キャンバスの自己修復が、正しく働くか確かめる
+console.log('■ 映像取り込みの自己修復');
+{
+  const matched = js.match(/function fixCaptureCanvasIfBroken[\s\S]*?\n}\n/);
+  check('fixCaptureCanvasIfBroken が定義されている', Boolean(matched), true);
+
+  if (matched) {
+    // この関数は els と cameraReader を使うので、偽物を渡して動かす
+    const make = new Function('els', 'cameraReader', 'return (' + matched[0] + ')');
+
+    // ① 映像は1280pxなのにキャンバスが0px → 作り直させる（これが不具合の状態）
+    const broken = { captureCanvas: { width: 0 }, _destroyCaptureCanvas() { this.captureCanvas = undefined; } };
+    const fixBroken = make({ video: { videoWidth: 1280 } }, broken);
+    check('0pxのキャンバスは作り直す', fixBroken(), true);
+    check('作り直しのため捨てられている', broken.captureCanvas, undefined);
+
+    // ② 大きさが合っているときは何もしない
+    const ok = { captureCanvas: { width: 1280 }, _destroyCaptureCanvas() { this.captureCanvas = undefined; } };
+    check('大きさが合っていれば何もしない', make({ video: { videoWidth: 1280 } }, ok)(), false);
+
+    // ③ 映像サイズがまだ不明なときは何もしない
+    const unknown = { captureCanvas: { width: 0 }, _destroyCaptureCanvas() { this.captureCanvas = undefined; } };
+    check('映像サイズ不明なら何もしない', make({ video: { videoWidth: 0 } }, unknown)(), false);
+  }
+}
+
 // withTimeout（処理が終わらないときに打ち切る仕組み）を script.js から取り出して実際に動かす
 (async () => {
   console.log('■ 時間切れの安全装置');

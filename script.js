@@ -26,6 +26,7 @@ const els = {
   resultLink: document.getElementById('resultLink'),
   copyBtn: document.getElementById('copyBtn'),
   status: document.getElementById('status'),
+  diag: document.getElementById('diag'),
   fileInput: document.getElementById('fileInput'),
   historyArea: document.getElementById('historyArea'),
   history: document.getElementById('history'),
@@ -61,6 +62,8 @@ let cameraState = 'idle';
 // 起動処理の通し番号。起動を待っている間に停止されたかどうかを見分けるために使う
 let sessionId = 0;
 let lastText = '';
+let decodeAttempts = 0;   // 読み取りを試した回数（動作確認用）
+let diagTimer = null;     // 動作状況を更新するタイマー
 let lastTime = 0;
 let audioCtx = null;
 
@@ -145,6 +148,38 @@ function isHarmlessDecodeError(err) {
   return err instanceof ZXing.NotFoundException
     || err instanceof ZXing.ChecksumException
     || err instanceof ZXing.FormatException;
+}
+
+// ライブラリは「映像を取り込むためのキャンバス」を最初の1回だけ作り、その大きさを使い回します。
+// 作られた時点で映像サイズがまだ0だと、0×0のまま固定され、以後永久に何も読み取れません。
+// 映像サイズが判明した（または画面回転で変わった）ら、作り直させて自動的に直します。
+function fixCaptureCanvasIfBroken() {
+  const width = els.video.videoWidth;
+  const canvas = cameraReader.captureCanvas;
+  if (width > 0 && canvas && canvas.width !== width
+      && typeof cameraReader._destroyCaptureCanvas === 'function') {
+    cameraReader._destroyCaptureCanvas();
+    return true;
+  }
+  return false;
+}
+
+// 読み取れないときに原因がわかるよう、映像サイズと試行回数を表示する
+function startDiagnostics() {
+  stopDiagnostics();
+  diagTimer = setInterval(() => {
+    fixCaptureCanvasIfBroken();
+    const w = els.video.videoWidth || 0;
+    const h = els.video.videoHeight || 0;
+    els.diag.textContent = `映像 ${w}×${h} ／ 読み取り試行 ${decodeAttempts}回`;
+    els.diag.hidden = false;
+  }, 500);
+}
+
+function stopDiagnostics() {
+  if (diagTimer) clearInterval(diagTimer);
+  diagTimer = null;
+  els.diag.hidden = true;
 }
 
 // カメラの映像と、ライブラリが付けたイベントの後始末をまとめて行う。
@@ -237,6 +272,7 @@ async function startCamera() {
     await withTimeout(
       cameraReader.decodeFromStream(stream, els.video, (result, err) => {
         if (mySession !== sessionId) return; // 停止後に呼ばれたものは無視する
+        decodeAttempts++;
         if (result) {
           handleResult(result);
           return;
@@ -258,6 +294,8 @@ async function startCamera() {
     }
 
     cameraState = 'scanning';
+    decodeAttempts = 0;
+    startDiagnostics();
     els.placeholder.hidden = true;
     els.guide.hidden = false;
     els.startBtn.hidden = true;
@@ -266,6 +304,8 @@ async function startCamera() {
   } catch (err) {
     // 途中で失敗したときは、カメラを必ず解放する（つけっぱなしを防ぐ）
     releaseCamera(stream);
+
+    stopDiagnostics();
 
     // 利用者が自分で停止した場合は、エラーとして知らせない
     if (mySession !== sessionId) return;
@@ -289,6 +329,7 @@ async function startCamera() {
 function stopCamera() {
   sessionId++; // 起動処理の途中なら、それを無効にする
   cameraState = 'idle';
+  stopDiagnostics();
   releaseCamera(); // カメラを解放し、イベントの後始末をする
   els.guide.hidden = true;
   els.placeholder.hidden = false;

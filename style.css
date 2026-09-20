@@ -169,6 +169,14 @@ body {
   text-align: center;
 }
 
+.diag {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: center;
+  font-family: "SF Mono", ui-monospace, monospace;
+}
+
 /* --- 画像から読み取る --- */
 .file-area {
   margin-top: 20px;
