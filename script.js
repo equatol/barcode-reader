@@ -62,6 +62,7 @@ let cameraState = 'idle';
 // 起動処理の通し番号。起動を待っている間に停止されたかどうかを見分けるために使う
 let sessionId = 0;
 let lastText = '';
+const APP_VERSION = 'v3'; // 画面に表示して、新しい版が読み込まれているか確認するため
 let decodeAttempts = 0;   // 読み取りを試した回数（動作確認用）
 let diagTimer = null;     // 動作状況を更新するタイマー
 let lastTime = 0;
@@ -171,7 +172,7 @@ function startDiagnostics() {
     fixCaptureCanvasIfBroken();
     const w = els.video.videoWidth || 0;
     const h = els.video.videoHeight || 0;
-    els.diag.textContent = `映像 ${w}×${h} ／ 読み取り試行 ${decodeAttempts}回`;
+    els.diag.textContent = `${APP_VERSION} ／ 映像 ${w}×${h} ／ 読み取り試行 ${decodeAttempts}回`;
     els.diag.hidden = false;
   }, 500);
 }
