@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <!-- viewport-fit=cover: iPhoneの画面のふちまで使う -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>バーコードリーダー</title>
+  <!-- Content-Security-Policy: 読み込み・通信先を自分のサイトだけに限定する。
+       万一ページに細工されても、外部のプログラムが動いたりデータが送られたりしない -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self' blob: mediastream:; connect-src 'self'; object-src 'none'; base-uri 'none'">
+  <meta name="theme-color" content="#0f1115">
+  <!-- ホーム画面に追加したときの設定（iPhone向け） -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="バーコード">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="header">
+    <h1>バーコードリーダー</h1>
+  </header>
+
+  <main class="main">
+    <!-- カメラ映像を表示する場所 -->
+    <div class="camera-area">
+      <!-- playsinline: iPhoneで全画面プレーヤーが開かないようにする（これが無いと動かない）
+           muted / autoplay: 自動再生をブラウザに許可してもらうために必要 -->
+      <video id="preview" class="preview" playsinline autoplay muted></video>
+      <!-- 読み取りの目安になる枠 -->
+      <div class="guide" id="guide" hidden></div>
+      <p class="placeholder" id="placeholder">「カメラを起動」を押してください</p>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn" class="btn btn-primary" type="button">カメラを起動</button>
+      <button id="stopBtn" class="btn" type="button" hidden>停止</button>
+    </div>
+
+    <!-- 読み取り結果 -->
+    <section class="result" id="result" hidden>
+      <p class="result-format" id="resultFormat"></p>
+      <p class="result-text" id="resultText"></p>
+      <a class="result-link" id="resultLink" href="#" target="_blank" rel="noopener noreferrer" hidden>このURLを開く</a>
+      <button id="copyBtn" class="btn btn-primary" type="button">コピーする</button>
+    </section>
+
+    <p class="status" id="status" role="status"></p>
+
+    <!-- カメラが無いPCでも試せるように、画像からも読み取れるようにしておく -->
+    <section class="file-area">
+      <label class="file-label" for="fileInput">画像ファイルから読み取る</label>
+      <input type="file" id="fileInput" accept="image/*">
+    </section>
+
+    <!-- 読み取り履歴（ページを閉じると消えます） -->
+    <section class="history-area" id="historyArea" hidden>
+      <h2 class="history-title">読み取り履歴</h2>
+      <ul class="history" id="history"></ul>
+    </section>
+  </main>
+
+  <!-- バーコード読み取りライブラリ ZXing (https://github.com/zxing-js/library) v0.21.3
+       ライセンス: lib/ZXing-LICENSE.txt
+       外部CDNではなく自分のサイトに置いたものを使う
+       （配信元が改ざんされる心配がなく、オフラインでも動くため） -->
+  <script src="lib/zxing-0.21.3.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "width": 330,
+  "height": 330,
+  "expected": "https://example.com/test",
+  "format": "QR_CODE"
+}
