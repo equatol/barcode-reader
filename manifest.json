@@ -4,8 +4,8 @@
   "description": "カメラで商品バーコードやQRコードを読み取ります",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#0f1115",
-  "theme_color": "#0f1115",
+  "background_color": "#1c2230",
+  "theme_color": "#1c2230",
   "orientation": "portrait",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },

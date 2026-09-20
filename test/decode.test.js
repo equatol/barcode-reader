@@ -133,6 +133,17 @@ check('apple-touch-icon がある', fs.existsSync(path.join(APP_DIR, 'apple-touc
 // hidden属性が確実に効くようにしておく（display指定のあるクラスに打ち消されるのを防ぐ）
 check('[hidden] を隠す指定がある', /\[hidden\]\s*\{[^}]*display:\s*none\s*!important/.test(css), true);
 
+// 背景色は style.css / index.html / manifest.json の4か所に書かれているので、
+// 片方だけ直してホーム画面起動時に色が食い違う事故を防ぐ
+{
+  const bg = (css.match(/--bg:\s*(#[0-9a-fA-F]{3,8})/) || [])[1];
+  const manifest = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'manifest.json'), 'utf8'));
+  const themeColor = (html.match(/name="theme-color" content="(#[0-9a-fA-F]{3,8})"/) || [])[1];
+  check('theme-color が背景色と一致', themeColor, bg);
+  check('manifest の background_color が一致', manifest.background_color, bg);
+  check('manifest の theme_color が一致', manifest.theme_color, bg);
+}
+
 const scriptSrc = (html.match(/<script src="([^"]*zxing[^"]*)"/) || [])[1] || '';
 // ?v=3 のようなキャッシュ対策の印が付くので、それを取り除いてから確認する
 const scriptPath = scriptSrc.split('?')[0];

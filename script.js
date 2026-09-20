@@ -17,7 +17,7 @@ const {
   DecodeHintType, BarcodeFormat,
 } = ZXing;
 
-const APP_VERSION = 'v4'; // 画面に表示して、新しい版が読み込まれているか確認するため
+const APP_VERSION = 'v5'; // 画面に表示して、新しい版が読み込まれているか確認するため
 
 // 画面の部品をまとめて取得しておく
 const els = {
